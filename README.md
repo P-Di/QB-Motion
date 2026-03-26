@@ -9,3 +9,6 @@ https://bluepad32.readthedocs.io/en/latest/supported_gamepads/
 //ESP Name
 ESP32-PICO-MINI-02U
 Name for bluepad = Adafruit ESP feather V2
+
+//Sabertooth Lib
+https://github.com/dominicklee/Sabertooth-for-ESP32
