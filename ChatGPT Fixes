@@ -1,0 +1,156 @@
+/* CUA Robotics Lineman for Decathalon
+by Johnny Gravino using Bluepad32 library
+
+Modified with bug fixes & safety improvements
+*/
+
+#include <Sabertooth.h>
+#include <Bluepad32.h>
+#include <math.h>   // for fabs()
+
+ControllerPtr myControllers[BP32_MAX_GAMEPADS];
+Sabertooth ST(128, Serial1);
+
+const int led = 14;
+int flag = 0;
+
+// Connecting Controller
+void onConnectedController(ControllerPtr ctl) {
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] == nullptr) {
+            Serial.printf("CALLBACK: Controller connected, index=%d\n", i);
+
+            ControllerProperties properties = ctl->getProperties();
+            Serial.printf("Model: %s, VID=0x%04x, PID=0x%04x\n",
+                          ctl->getModelName().c_str(),
+                          properties.vendor_id,
+                          properties.product_id);
+
+            myControllers[i] = ctl;
+            return;
+        }
+    }
+    Serial.println("No empty controller slots available");
+}
+
+// Disconnect handler (ADDED SAFETY STOP)
+void onDisconnectedController(ControllerPtr ctl) {
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] == ctl) {
+            Serial.printf("Controller disconnected from index=%d\n", i);
+            myControllers[i] = nullptr;
+
+            // 🚨 SAFETY: stop motors
+            flag = 0;
+            ST.motor(1, 0);
+            ST.motor(2, 0);
+            return;
+        }
+    }
+}
+
+// Debug print
+void dumpGamepad(ControllerPtr ctl) {
+    Serial.printf(
+        "idx=%d | L:(%4d,%4d) R:(%4d,%4d) | throttle:%4d brake:%4d\n",
+        ctl->index(),
+        ctl->axisX(),
+        ctl->axisY(),
+        ctl->axisRX(),
+        ctl->axisRY(),
+        ctl->throttle(),   
+        ctl->brake()       
+    );
+}
+
+// Main control logic
+void processGamepad(ControllerPtr ctl) {
+
+    // TURN ON (Triangle / Y)
+    if (ctl->y()) {
+        flag = 1;
+    }
+
+    // TURN OFF (Square / X)
+    if (ctl->x()) {
+        flag = 0;
+        ST.motor(1, 0);
+        ST.motor(2, 0);
+
+        ctl->playDualRumble(0, 250, 0x80, 0x40);
+    }
+
+    if (flag) {
+        // Forward/back
+        float joyY = ctl->axisY() / 512.0;
+        if (fabs(joyY) < 0.195) joyY = 0;
+
+        float straight = -1 * pow(joyY, 3) * 80;
+
+        // Turning
+        float joyRX = ctl->axisRX() / 512.0;
+        if (fabs(joyRX) < 0.195) joyRX = 0;
+
+        float steering = pow(joyRX, 3) * 80;
+
+        // Combine
+        int leftMotorPower = straight + steering;
+        int rightMotorPower = straight - steering;
+
+        // ✅ Clamp to safe Sabertooth range
+        leftMotorPower = constrain(leftMotorPower, -127, 127);
+        rightMotorPower = constrain(rightMotorPower, -127, 127);
+
+        ST.motor(2, leftMotorPower);
+        ST.motor(1, rightMotorPower);
+    }
+    else {
+        // ✅ EXTRA SAFETY: always stop if flag off
+        ST.motor(1, 0);
+        ST.motor(2, 0);
+    }
+
+    dumpGamepad(ctl);
+}
+
+// Setup
+void setup() {
+    pinMode(led, OUTPUT);
+    digitalWrite(led, LOW);
+
+    Serial.begin(115200);
+    Serial1.begin(9600);
+
+    ST.autobaud();
+    ST.setRamping(15);
+
+    ST.motor(1, 0);
+    ST.motor(2, 0);
+
+    Serial.printf("Firmware: %s\n", BP32.firmwareVersion());
+
+    const uint8_t* addr = BP32.localBdAddress();
+    Serial.printf("BD Addr: %2X:%2X:%2X:%2X:%2X:%2X\n",
+                  addr[0], addr[1], addr[2],
+                  addr[3], addr[4], addr[5]);
+
+    BP32.setup(&onConnectedController, &onDisconnectedController);
+
+    // Helps with connection issues
+    BP32.forgetBluetoothKeys();
+
+    BP32.enableVirtualDevice(false);
+}
+
+// Loop
+void loop() {
+    bool dataUpdated = BP32.update();
+
+    // ✅ FIX: prevent null pointer crash
+    if (dataUpdated && myControllers[0] != nullptr) {
+        processGamepad(myControllers[0]);
+    }
+
+    // ✅ Faster response
+    delay(10);
+}
