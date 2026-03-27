@@ -24,3 +24,10 @@ Instructions:
 - Pick the Adafruit Feather ESP32 V2 and the appropriate COM
 - Verify
 - Run
+
+
+Running the code:
+// The main code, Main Optimized V2, is currently flashed on the esp. Power has been constrained to 100 instead of full 127. 
+// The robot is still very fast so use caution. Finally, the left wheel slips at times, but at other operates at same speed as right.
+// Connect by holding PS4 and Start button until white flashing buttons. Wait to connect to esp32, will be solid blue light when connected.
+// Press triangle to "start" motors square to stop. Everything is controlled by left joystick for now.
