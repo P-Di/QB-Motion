@@ -1,0 +1,129 @@
+/* CUA Robotics Lineman for Decathalon
+Optimized Drive Code - Left Stick + R1 Brake
+*/
+
+#include <Sabertooth.h>
+#include <Bluepad32.h>
+#include <math.h>
+
+ControllerPtr myControllers[BP32_MAX_GAMEPADS];
+Sabertooth ST(128, Serial1);
+
+int flag = 0;
+
+// ---------------- CONTROLLER CONNECTION ----------------
+void onConnectedController(ControllerPtr ctl) {
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] == nullptr) {
+            Serial.printf("Controller connected at index %d\n", i);
+            myControllers[i] = ctl;
+            return;
+        }
+    }
+}
+
+void onDisconnectedController(ControllerPtr ctl) {
+    for (int i = 0; i < BP32_MAX_GAMEPADS; i++) {
+        if (myControllers[i] == ctl) {
+            myControllers[i] = nullptr;
+
+            // 🚨 SAFETY STOP
+            flag = 0;
+            ST.motor(1, 0);
+            ST.motor(2, 0);
+
+            Serial.println("Controller disconnected - motors stopped");
+            return;
+        }
+    }
+}
+
+// ---------------- DEBUG OUTPUT ----------------
+void dumpGamepad(ControllerPtr ctl) {
+    Serial.printf(
+        "LY:%4d LX:%4d | throttle:%4d brake:%4d\n",
+        ctl->axisY(),
+        ctl->axisX(),
+        ctl->throttle(),
+        ctl->brake()
+    );
+}
+
+// ---------------- MAIN CONTROL ----------------
+void processGamepad(ControllerPtr ctl) {
+
+    // Enable / Disable driving
+    if (ctl->y()) flag = 1;
+    if (ctl->x()) {
+        flag = 0;
+        ST.motor(1, 0);
+        ST.motor(2, 0);
+    }
+
+    // 🚨 RIGHT BUMPER = HARD BRAKE
+    if (ctl->r1()) {
+        ST.motor(1, 0);
+        ST.motor(2, 0);
+        return;  // overrides everything
+    }
+
+    if (flag) {
+        // -------- LEFT STICK INPUT --------
+        float joyY = ctl->axisY() / 512.0;  // forward/back
+        float joyX = ctl->axisX() / 512.0;  // turning
+
+        // Deadzones
+        if (fabs(joyY) < 0.15) joyY = 0;
+        if (fabs(joyX) < 0.15) joyX = 0;
+
+        // Cubic scaling for precision
+        float forward = -pow(joyY, 3) * 100;
+        float turn = pow(joyX, 3) * 70;
+
+        // Arcade drive mix
+        int leftMotor = forward + turn;
+        int rightMotor = forward - turn;
+
+        // Clamp to Sabertooth limits
+        leftMotor = constrain(leftMotor, -127, 127);
+        rightMotor = constrain(rightMotor, -127, 127);
+
+        // Send to motors
+        ST.motor(2, leftMotor);
+        ST.motor(1, rightMotor);
+    }
+    else {
+        // Safety idle
+        ST.motor(1, 0);
+        ST.motor(2, 0);
+    }
+
+    dumpGamepad(ctl);
+}
+
+// ---------------- SETUP ----------------
+void setup() {
+    Serial.begin(115200);
+    Serial1.begin(9600);
+
+    ST.autobaud();
+    ST.setRamping(10);  // smoother accel
+
+    ST.motor(1, 0);
+    ST.motor(2, 0);
+
+    BP32.setup(&onConnectedController, &onDisconnectedController);
+    BP32.forgetBluetoothKeys();
+    BP32.enableVirtualDevice(false);
+}
+
+// ---------------- LOOP ----------------
+void loop() {
+    bool updated = BP32.update();
+
+    if (updated && myControllers[0] != nullptr) {
+        processGamepad(myControllers[0]);
+    }
+
+    delay(10);  // fast response
+}
