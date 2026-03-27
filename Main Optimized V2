@@ -1,6 +1,10 @@
 /* CUA Robotics Lineman for Decathalon
 Optimized Drive Code - Left Stick + R1 Brake
 */
+// This is the main code currently flashed on the esp. Power has been constrained to 100 instead of full 127. 
+// The robot is still very fast so use caution. Finally, the left wheel slips at times, but at other operates at same speed as right.
+// Connect by holding PS4 and Start button until white flashing buttons. Wait to connect to esp32, will be solid blue light when connected.
+// Press triangle to "start" motors square to stop. Everything is controlled by left joystick for now.
 
 #include <Sabertooth.h>
 #include <Bluepad32.h>
@@ -85,8 +89,8 @@ void processGamepad(ControllerPtr ctl) {
         int rightMotor = forward - turn;
 
         // Clamp to Sabertooth limits
-        leftMotor = constrain(leftMotor, -127, 127);
-        rightMotor = constrain(rightMotor, -127, 127);
+        leftMotor = constrain(leftMotor, -100, 100);
+        rightMotor = constrain(rightMotor, -100, 100);
 
         // Send to motors
         ST.motor(2, leftMotor);
